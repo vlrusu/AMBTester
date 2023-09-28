@@ -33,7 +33,7 @@ add_executable(${PROJECT_NAME}
     src/ADG706.c
 )
 
-target_link_libraries(${PROJECT_NAME} pico_stdlib hardware_adc hardware_pio hardware_spi LCD Infrared Icm20948 GUI Fonts Config)
+target_link_libraries(${PROJECT_NAME} pico_stdlib hardware_adc hardware_pio hardware_spi pico_multicore LCD Infrared Icm20948 GUI Fonts Config)
 
 
 
