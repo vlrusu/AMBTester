@@ -36,6 +36,8 @@
 #define KEY_A 15
 #define KEY_B 17
 
+#define PWM_PIN 16
+
 static const uint16_t CAL_MASK = 0xffff;
 
 #define AIRCR_Register (*((volatile uint32_t *)(PPB_BASE + 0x0ED0C)))
@@ -55,6 +57,7 @@ static const float empty_battery = 2.8;
 static bool cleartogo;
 
 UWORD *BlackImage;
+#define TOPCOLORWINDOW 50
 
 // Define a pair of int values
 typedef struct
@@ -85,24 +88,22 @@ typedef struct
 
 // CAL side
 KeyValuePair bridgeMapCAL[] = {
-    {0, {8,4}, {4,14} }, //vcc vcc 2+7, P0-P11 self check
-{1, {5,1}, {16,17} }, //calsiga vcalab 11+13, P13-P14
-{2, {4,2}, {15,16} }, //calsigb calsiga 9+11, P12-P13
-{3, {3,3}, {14,15} }, //vcc calsigb 7+9, P11-P12
-{4, {3,5}, {14,13} }, //vcc gndcal 7+5, P11-P10
-{5, {0,6}, {11,12} }, //sigbp gnd 1+3, P8-P9
-{6, {12,7}, {10,11} }, //sigbn sigbp 10+1, P4-P8
-{7, {12,6}, {10,9} }, //sigbn gnd 10+3, P4-P9
-{8, {13,6}, {7,8} }, //sigap gnd 12+3, P5-P9
-{9, {14,10}, {6,7} }, //sigan sigap 14+12, P6-P5
-{10, {14,6}, {6,5} }, //sigan gnd 14+3, P6-P9
-{11, {1,15}, {5,4} }, //gnd vcc 3+2, P9-P0
-{12, {9,15}, {3,4} }, //sck vcc 4+2, P1-P0
-{13, {10,14}, {2,3} }, //sdi sck 6+4, P2-P1
-{14, {11,13}, {1,2} }, //cs sdi 8+6, P3-P2
+    {0, {8, 4}, {4, 14}},   // vcc vcc 2+7, P0-P11 self check
+    {1, {5, 1}, {16, 17}},  // calsiga vcalab 11+13, P13-P14
+    {2, {4, 2}, {15, 16}},  // calsigb calsiga 9+11, P12-P13
+    {3, {3, 3}, {14, 15}},  // vcc calsigb 7+9, P11-P12
+    {4, {3, 5}, {14, 13}},  // vcc gndcal 7+5, P11-P10
+    {5, {0, 6}, {11, 12}},  // sigbp gnd 1+3, P8-P9
+    {6, {12, 7}, {10, 11}}, // sigbn sigbp 10+1, P4-P8
+    {7, {12, 6}, {10, 9}},  // sigbn gnd 10+3, P4-P9
+    {8, {13, 6}, {7, 8}},   // sigap gnd 12+3, P5-P9
+    {9, {14, 10}, {6, 7}},  // sigan sigap 14+12, P6-P5
+    {10, {14, 6}, {6, 5}},  // sigan gnd 14+3, P6-P9
+    {11, {8, 6}, {4, 5}},   // vcc gnd 2+3, P0-P9
+    {12, {9, 15}, {3, 4}},  // sck vcc 4+2, P1-P0
+    {13, {10, 14}, {2, 3}}, // sdi sck 6+4, P2-P1
+    {14, {11, 13}, {1, 2}}, // cs sdi 8+6, P3-P2
 };
-
-
 
 KeyValuePair bridgeMapHV[] = {
     {0, {10, 12}, {2, 1}}, // csbar+sdi 6+8, P2-P3
@@ -114,7 +115,6 @@ KeyValuePair bridgeMapHV[] = {
 // Define the size of the map based on the number of entries
 const size_t intMapSizeCAL = sizeof(bridgeMapCAL) / sizeof(bridgeMapCAL[0]);
 const size_t intMapSizeHV = sizeof(bridgeMapHV) / sizeof(bridgeMapHV[0]);
-
 
 KeyValuePair *bridgeMap;
 size_t intMapSize;
@@ -151,7 +151,7 @@ float read_vsys_voltage()
 
 void AMBCAL_setup()
 {
-    Paint_ClearWindows(1, 50, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
     Paint_DrawString_EN(1, 20, "Set for AMBCAL", &Font20, 0x000f, 0xfff0);
     // AIRCR_Register = 0x5FA0004;
     cleartogo = 0;
@@ -163,7 +163,7 @@ void AMBCAL_setup()
 void AMBHV_setup()
 {
 
-    Paint_ClearWindows(1, 50, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
     Paint_DrawString_EN(1, 20, "Set for  AMBHV", &Font20, 0x000f, 0xfff0);
     // AIRCR_Register = 0x5FA0004;
     cleartogo = 0;
@@ -191,7 +191,7 @@ void gpio_callback(uint gpio, uint32_t events)
 }
 
 // Function to run on core 1
-void core1_entry()
+/* void core1_entry()
 {
 
     while (1)
@@ -211,12 +211,32 @@ void core1_entry()
 
         sleep_ms(1000);
     }
-}
+} */
 
 int main()
 {
     // Initialize stdio
     stdio_init_all();
+
+    // Tell GPIO 16 to use the PWM functions
+    gpio_set_function(PWM_PIN, GPIO_FUNC_PWM);
+
+    // Find out which PWM slice is connected to GPIO 16 (each slice controls two PWM channels).
+    // The channel is either 0 or 1, with 0 being the A side and 1 being the B side of the slice.
+    uint slice_num = pwm_gpio_to_slice_num(PWM_PIN);
+
+    // Set the PWM frequency
+    // The frequency is determined by the clock divider and the wrap value.
+    // The default clock is 125 MHz. A clock divider of 125 will divide it by 125, to 1 MHz.
+    // A wrap value of 1000 will cause the counter to reset at 10000, thus 1 MHz / 100 = 10 kHz PWM frequency.
+    pwm_set_clkdiv(slice_num, 125.0);
+
+    pwm_set_wrap(slice_num, 100);
+
+    // Set the PWM level; setting it to half the wrap value will give a 50% duty cycle.
+    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+
+    pwm_set_enabled(slice_num, true);
 
     cleartogo = 0;
 
@@ -236,18 +256,6 @@ int main()
     // Setup the interrupt to trigger when GPIO goes high
     //    gpio_set_irq_enabled_with_callback(INPUT_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
 
-    ADG706 dut;
-    ADG706 gndref;
-
-    adg706_init(&dut, EN_PIN, A0_PIN, A1_PIN, A2_PIN, A3_PIN);
-    adg706_init(&gndref, EN_PIN_G, A0_PIN_G, A1_PIN_G, A2_PIN_G, A3_PIN_G);
-
-    adg706_set_enable(&dut, 0);
-    adg706_set_enable(&gndref, 0);
-
-    adg706_set_enable(&dut, 1);
-    adg706_set_enable(&gndref, 1);
-
     // Initialize ADC
     init_adc_to_read_vsys();
 
@@ -257,11 +265,15 @@ int main()
     {
         return -1;
     }
+
+    
     DEV_SET_PWM(50);
     /* LCD Init */
     printf("1.14inch LCD demo...\r\n");
     LCD_1IN14_Init(HORIZONTAL);
     LCD_1IN14_Clear(WHITE);
+
+    
 
     // LCD_SetBacklight(1023);
     UDOUBLE Imagesize = (LCD_1IN14_HEIGHT)*LCD_1IN14_WIDTH * 2;
@@ -281,6 +293,20 @@ int main()
     SET_Infrared_PIN(KEY_A);
     SET_Infrared_PIN(KEY_B);
 
+    ADG706 dut;
+    ADG706 gndref;
+
+    adg706_init(&dut, EN_PIN, A0_PIN, A1_PIN, A2_PIN, A3_PIN);
+    adg706_init(&gndref, EN_PIN_G, A0_PIN_G, A1_PIN_G, A2_PIN_G, A3_PIN_G);
+
+    adg706_set_enable(&dut, 0);
+    adg706_set_enable(&gndref, 0);
+
+    adg706_set_enable(&dut, 1);
+    adg706_set_enable(&gndref, 1);
+
+    AMBCAL_setup();
+
     // Launch core1_entry() on core 1
     //    multicore_launch_core1(core1_entry);
 
@@ -289,20 +315,15 @@ int main()
     gpio_set_irq_enabled_with_callback(KEY_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled_with_callback(KEY_B, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
-    AMBCAL_setup();
 
+    
     // Wait forever
     while (1)
     {
-
-       
-
-        
-
         // Read VSYS voltage
         float vsys_voltage = read_vsys_voltage();
         char str_float[20]; // Enough space for a float and null-terminator
-        sprintf(str_float, "%d%%", (int) (100 * vsys_voltage / full_battery));
+        sprintf(str_float, "%d%%", (int)(100 * vsys_voltage / full_battery));
         printf("VSYS Voltage: %.2f \n", vsys_voltage);
         Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
 
@@ -318,17 +339,18 @@ int main()
         sleep_ms(150);
 
         bool pin_state = gpio_get(INPUT_PIN);
+
         if (pin_state == 0)
         {
-            Paint_ClearWindows(1, 40, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, YELLOW);
+            Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, YELLOW);
             Paint_DrawString_EN(1, 80, "Waiting for AMB", &Font20, 0x000f, 0xfff0);
             LCD_1IN14_Display(BlackImage);
             cleartogo = 1;
-            continue;
         }
 
         if (cleartogo == 1)
         {
+
             if (pin_state == 0)
                 continue; // don't do anything until self check
 
@@ -352,10 +374,16 @@ int main()
 
                 if (pin_state == 1)
                 {
-                    Paint_ClearWindows(1, 40, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
+                    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
                     sprintf(str_float, "Bridge  %d - %d", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
                     Paint_DrawString_EN(1, 70, str_float, &Font20, 0x000f, 0xfff0);
                     LCD_1IN14_Display(BlackImage);
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+
+                    sleep_ms(3000);
+
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+
                     cleartogo = 0;
                     break;
                 }
@@ -364,15 +392,25 @@ int main()
                 { // if we got here turn allto green
 
                     // turn to green
-                    Paint_ClearWindows(1, 24, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, GREEN);
+                    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, GREEN);
                     Paint_DrawString_EN(1, 70, "All ok", &Font20, 0x000f, 0xfff0);
                     printf("All ok");
                     LCD_1IN14_Display(BlackImage);
+
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+                    sleep_ms(100);
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+                    sleep_ms(100);
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+                    sleep_ms(100);
+                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+
                     cleartogo = 0;
                 }
             }
         }
     }
+    
 
     return 0;
 }
