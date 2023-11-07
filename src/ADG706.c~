@@ -1,0 +1,65 @@
+
+
+// Define the GPIO pins to be used
+#define ADG706_SDI  2 // Serial Data Input
+#define ADG706_CLK  3 // Clock Input
+#define ADG706_EN   4 // Enable, active low
+
+// Initialize the GPIO pins for the ADG706
+void adg706_init() {
+    gpio_init(ADG706_SDI);
+    gpio_init(ADG706_CLK);
+    gpio_init(ADG706_EN);
+
+    gpio_set_dir(ADG706_SDI, GPIO_OUT);
+    gpio_set_dir(ADG706_CLK, GPIO_OUT);
+    gpio_set_dir(ADG706_EN, GPIO_OUT);
+
+    // Set initial state
+    gpio_put(ADG706_SDI, 0);
+    gpio_put(ADG706_CLK, 0);
+    gpio_put(ADG706_EN, 1); // Disable the ADG706 initially
+}
+
+// Function to send a bit to the ADG706
+void adg706_send_bit(bool bit_value) {
+    gpio_put(ADG706_SDI, bit_value); // Set the bit value
+    sleep_us(1); // Ensure setup time is met
+    gpio_put(ADG706_CLK, 1); // Clock high
+    sleep_us(1); // Hold time
+    gpio_put(ADG706_CLK, 0); // Clock low
+}
+
+// Function to set the channel of the ADG706
+void adg706_set_channel(uint8_t channel) {
+    if (channel > 63) return; // The ADG706 has 64 channels, 0-63
+
+    gpio_put(ADG706_EN, 0); // Enable the ADG706
+
+    // Send the bits MSB first
+    for (int i = 5; i >= 0; i--) {
+        adg706_send_bit((channel >> i) & 0x01);
+    }
+
+    // Latch the channel by clocking with SDI high
+    adg706_send_bit(1);
+    
+    gpio_put(ADG706_EN, 1); // Disable the ADG706 to latch the new channel
+}
+
+int main() {
+    // Initialize stdio and ADG706 interface
+    stdio_init_all();
+    adg706_init();
+
+    printf("ADG706 MUX Test\n");
+
+    while (1) {
+        // Loop through each channel and set it
+        for (uint8_t channel = 0; channel < 64; channel++) {
+            adg706_set_channel(channel);
+            printf("Channel %d selected\n", channel);
+            sleep_ms(1000); // Wait 1 second before changing the channel
+        }
+    }
+}

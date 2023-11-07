@@ -1,0 +1,11 @@
+#include "pico/stdlib.h"
+
+/* Define to prevent recursive inclusion -------------------------------------*/
+#ifndef ADG706_H
+#define ADG706_H
+
+void adg706_init();
+void adg706_set_address(uint8_t address);
+void adg706_set_enable(bool enable);
+
+#endif /* ADG706*/
