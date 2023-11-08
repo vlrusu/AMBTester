@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include "hardware/adc.h"
 
+#include "pico/multicore.h"
+#include "pico/multicore.h"
+
 #include "ADG706.h"
 
 #include "DEV_Config.h"
@@ -35,6 +38,9 @@
 
 static const uint16_t CAL_MASK = 0xffff;
 
+#define AIRCR_Register (*((volatile uint32_t*)(PPB_BASE + 0x0ED0C)))
+
+
 // Voltage divider ratio
 #define DIVIDER_RATIO 3.0f
 
@@ -46,6 +52,8 @@ static const uint16_t CAL_MASK = 0xffff;
 
 static const float full_battery = 4.2; // these are our reference voltages for a full / empty battery, in volts
 static const float empty_battery = 2.8;
+
+static bool cleartogo;
 
 // Define a pair of int values
 typedef struct
@@ -118,10 +126,49 @@ float read_vsys_voltage()
 // This function will be called when GPIO 5 goes high
 void gpio_callback(uint gpio, uint32_t events)
 {
-    if (gpio == INPUT_PIN)
+    if (gpio == KEY_A)
     {
         // Your custom logic here
-        printf("GPIO %d went high!\n", gpio);
+
+        Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+        Paint_DrawString_EN(1, 100, "Set for AMBCAL", &Font20, 0x000f, 0xfff0);
+        AIRCR_Register = 0x5FA0004;
+        cleartogo = 0;
+        LCD_1IN14_Display(BlackImage);
+        printf("gpio =%d\r\n", KEY_A);
+    }
+
+    else if (gpio == KEY_B)
+    {
+        Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+        Paint_DrawString_EN(1, 100, "Set for AMBHV", &Font20, 0x000f, 0xfff0);
+        AIRCR_Register = 0x5FA0004;
+        cleartogo = 0;
+        LCD_1IN14_Display(BlackImage);
+        printf("gpio =%d\r\n", KEY_B);
+    }
+}
+
+// Function to run on core 1
+void core1_entry()
+{
+
+    while (1)
+    {
+        // Read VSYS voltage
+        float vsys_voltage = read_vsys_voltage();
+        char str_float[20]; // Enough space for a float and null-terminator
+        sprintf(str_float, "%.2f", vsys_voltage);
+        printf("VSYS Voltage: %.2fV %s\n", vsys_voltage, charging_state ? "Charging" : "not charging");
+        Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
+
+        if (vsys_voltage < empty_battery)
+        {
+            Paint_DrawString_EN(100, 1, "Low batt", &Font20, 0x000f, 0xfff0);
+        }
+        LCD_1IN14_Display(BlackImage);
+
+        sleep_ms(1000);
     }
 }
 
@@ -129,6 +176,8 @@ int main()
 {
     // Initialize stdio
     stdio_init_all();
+
+    cleartogo = 0;
 
     // Initialize the chosen GPIO pin
     gpio_init(INPUT_PIN);
@@ -191,20 +240,28 @@ int main()
     SET_Infrared_PIN(KEY_A);
     SET_Infrared_PIN(KEY_B);
 
+    // Launch core1_entry() on core 1
+    multicore_launch_core1(core1_entry);
+
+    // Set up the interrupt to trigger when the button goes from high to low (a falling edge),
+    // which corresponds to the button being pressed
+    gpio_set_irq_enabled_with_callback(KEY_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+    gpio_set_irq_enabled_with_callback(KEY_B, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
+
     // Wait forever
     while (1)
     {
 
-        if (DEV_Digital_Read(KEY_A) == 0)
-        {
-            Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
-            Paint_DrawString_EN(1, 100, "Set for AMBCAL", &Font20, 0x000f, 0xfff0);
-            cleartogo = 0;
-            LCD_1IN14_Display(BlackImage);
-            printf("gpio =%d\r\n", KEY_A);
-            DEV_Delay_ms(1000);
-            // set for AMBCAL
-        }
+        /*       if (DEV_Digital_Read(KEY_A) == 0)
+              {
+                  Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+                  Paint_DrawString_EN(1, 100, "Set for AMBCAL", &Font20, 0x000f, 0xfff0);
+                  cleartogo = 0;
+                  LCD_1IN14_Display(BlackImage);
+                  printf("gpio =%d\r\n", KEY_A);
+                  DEV_Delay_ms(1000);
+                  // set for AMBCAL
+              } */
 
         // wait for selfcheck to go low
         adg706_set_address(&dut, bridgeMap[0].mbpair.first);
@@ -255,29 +312,17 @@ int main()
                     break;
                 }
 
-                // Read VSYS voltage
-                float vsys_voltage = read_vsys_voltage();
-                char str_float[20]; // Enough space for a float and null-terminator
-                sprintf(str_float, "%.2f", vsys_voltage);
-                printf("VSYS Voltage: %.2fV %s\n", vsys_voltage, charging_state ? "Charging" : "not charging");
-                Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
+                if (i == intMapSize - 1)
+                { // if we got here turn allto green
 
-                if (vsys_voltage < empty_battery)
-                {
-                    Paint_DrawString_EN(100, 1, "Low batt", &Font20, 0x000f, 0xfff0);
-                }
-                LCD_1IN14_Display(BlackImage);
-
-                sleep_ms(1000);
-
-                if (i == intMapSize-1){            //if we got here turn allto green
-
-                    //turn to green
-                    cleartogo=0;
+                    // turn to green
+                    Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, GREEN);
+                    Paint_DrawString_EN(1, 50, "All ok", &Font20, 0x000f, 0xfff0);
+                    printf("All ok");
+                    LCD_1IN14_Display(BlackImage);
+                    cleartogo = 0;
                 }
             }
-
-            
         }
     }
 
