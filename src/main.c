@@ -174,7 +174,7 @@ int main()
     LCD_1IN14_Clear(WHITE);
 
     // LCD_SetBacklight(1023);
-    UDOUBLE Imagesize = (LCD_1IN14_HEIGHT) * LCD_1IN14_WIDTH * 2;
+    UDOUBLE Imagesize = (LCD_1IN14_HEIGHT)*LCD_1IN14_WIDTH * 2;
     UWORD *BlackImage;
     if ((BlackImage = (UWORD *)malloc(Imagesize)) == NULL)
     {
@@ -195,60 +195,89 @@ int main()
     while (1)
     {
 
-        // cycle through all channels
-
-        for (size_t i = 0; i < intMapSize; ++i)
+        if (DEV_Digital_Read(KEY_A) == 0)
         {
-            int pin1 = bridgeMap[i].mbpair.first;
-            int pin2 = bridgeMap[i].mbpair.second;
-
-            adg706_set_address(&dut, pin1);
-            adg706_set_address(&gndref, pin2);
-
-            sleep_ms(10);
-
-            bool pin_state = gpio_get(INPUT_PIN);
-            bool charging_state = gpio_get(CHARGING_PIN);
-
-            if (i == 2 && pin_state != 1)
-            {
-                printf("Self check failed\n");
-                Paint_ClearWindows(1,20,LCD_1IN14.WIDTH,LCD_1IN14.HEIGHT,RED);
-//                Paint_Clear(RED);
-                LCD_1IN14_Display(BlackImage);
-                DEV_Delay_ms(1000);
-            }
-
-            if (DEV_Digital_Read(KEY_A) == 0)
-            {
-//                Paint_Clear(WHITE);
-                Paint_ClearWindows(1,20,LCD_1IN14.WIDTH,LCD_1IN14.HEIGHT,WHITE);
-                LCD_1IN14_Display(BlackImage);
-                printf("gpio =%d\r\n",KEY_A);
-                DEV_Delay_ms(1000);
-            }
-
-            // Print the state of the pin
-            printf("Pin state is: %s ", pin_state ? "High" : "Low");
-            printf(" between pins %d and %d \n", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
-            sleep_ms(10);
-            Paint_DrawString_EN(1, 50, "Bridge detected", &Font20, 0x000f, 0xfff0);
-
-            // Read VSYS voltage
-            float vsys_voltage = read_vsys_voltage();
-            char str_float[20]; // Enough space for a float and null-terminator
-            sprintf(str_float, "%.2f", vsys_voltage);
-            printf("VSYS Voltage: %.2fV %s\n", vsys_voltage, charging_state ? "Charging" : "not charging");
-            Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
-
-            if (vsys_voltage < empty_battery){
-                Paint_DrawString_EN(100, 1, "Low batt", &Font20, 0x000f, 0xfff0);
-            }
+            Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, WHITE);
+            Paint_DrawString_EN(1, 100, "Set for AMBCAL", &Font20, 0x000f, 0xfff0);
+            cleartogo = 0;
             LCD_1IN14_Display(BlackImage);
+            printf("gpio =%d\r\n", KEY_A);
+            DEV_Delay_ms(1000);
+            // set for AMBCAL
+        }
 
+        // wait for selfcheck to go low
+        adg706_set_address(&dut, bridgeMap[0].mbpair.first);
+        adg706_set_address(&gndref, bridgeMap[0].mbpair.second);
 
+        sleep_ms(10);
 
-            sleep_ms(1000);
+        bool pin_state = gpio_get(INPUT_PIN);
+        if (pin_state == 0)
+        {
+            Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
+            LCD_1IN14_Display(BlackImage);
+            cleartogo = 1;
+            continue;
+        }
+
+        if (cleartogo == 1)
+        {
+            if (pin_state == 0)
+                continue; // don't do anything until self check
+
+            // cycle through all channels except first
+
+            for (size_t i = 1; i < intMapSize; ++i)
+            {
+                int pin1 = bridgeMap[i].mbpair.first;
+                int pin2 = bridgeMap[i].mbpair.second;
+
+                adg706_set_address(&dut, pin1);
+                adg706_set_address(&gndref, pin2);
+
+                sleep_ms(10);
+
+                bool pin_state = gpio_get(INPUT_PIN);
+                bool charging_state = gpio_get(CHARGING_PIN);
+
+                // Print the state of the pin
+                printf("Pin state is: %s ", pin_state ? "High" : "Low");
+                printf(" between pins %d and %d \n", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                sleep_ms(10);
+
+                if (pin_state == 1)
+                {
+                    Paint_ClearWindows(1, 20, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
+                    Paint_DrawString_EN(1, 50, "Bridge detected", &Font20, 0x000f, 0xfff0);
+                    LCD_1IN14_Display(BlackImage);
+                    cleartogo = 0;
+                    break;
+                }
+
+                // Read VSYS voltage
+                float vsys_voltage = read_vsys_voltage();
+                char str_float[20]; // Enough space for a float and null-terminator
+                sprintf(str_float, "%.2f", vsys_voltage);
+                printf("VSYS Voltage: %.2fV %s\n", vsys_voltage, charging_state ? "Charging" : "not charging");
+                Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
+
+                if (vsys_voltage < empty_battery)
+                {
+                    Paint_DrawString_EN(100, 1, "Low batt", &Font20, 0x000f, 0xfff0);
+                }
+                LCD_1IN14_Display(BlackImage);
+
+                sleep_ms(1000);
+
+                if (i == intMapSize-1){            //if we got here turn allto green
+
+                    //turn to green
+                    cleartogo=0;
+                }
+            }
+
+            
         }
     }
 
