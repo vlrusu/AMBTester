@@ -1,0 +1,36 @@
+#include "pico/stdlib.h"
+#include "hardware/gpio.h"
+#include "hardware/irq.h"
+
+// GPIO pin number where the input is connected
+#define INPUT_PIN 5
+
+// This function will be called when GPIO 5 goes high
+void gpio_callback(uint gpio, uint32_t events) {
+    if (gpio == INPUT_PIN) {
+        // Your custom logic here
+        printf("GPIO %d went high!\n", gpio);
+    }
+}
+
+int main() {
+    // Initialize stdio
+    stdio_init_all();
+
+    // Initialize the chosen GPIO pin
+    gpio_init(INPUT_PIN);
+    // Set the GPIO as input
+    gpio_set_dir(INPUT_PIN, GPIO_IN);
+    // Enable pull-down to make the input low by default
+    gpio_pull_down(INPUT_PIN);
+
+    // Setup the interrupt to trigger when GPIO goes high
+    gpio_set_irq_enabled_with_callback(INPUT_PIN, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
+
+    // Wait forever
+    while (1) {
+        tight_loop_contents();
+    }
+
+    return 0;
+}
