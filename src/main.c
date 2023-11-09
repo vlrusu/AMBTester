@@ -1,3 +1,14 @@
+/**
+ * @file main.c
+ * @author Vadim Rusu (vadim.l.rusu@gmail.com)
+ * @brief
+ * @version 0.1
+ * @date 2023-11-08
+ *
+ * @copyright Copyright (c) 2023
+ *
+ */
+
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
@@ -17,6 +28,10 @@
 
 #include "LCD_1in14.h"
 
+/**
+ * @brief defines
+ *
+ */
 // GPIO pin number where the input is connected
 #define INPUT_PIN 21
 #define CHARGING_PIN 24
@@ -58,8 +73,12 @@ static bool cleartogo;
 
 UWORD *BlackImage;
 #define TOPCOLORWINDOW 50
+#define STARTTEXTPOS 60
 
-// Define a pair of int values
+/**
+ * @brief  Define a pair of int values
+ *
+ */
 typedef struct
 {
     int first;
@@ -84,9 +103,11 @@ typedef struct
 
 } KeyValuePair;
 
-// Define a map as an array of key-value pairs. First is the dut, second is the ground ref
-
-// CAL side
+/**
+ * @brief Define a map as an array of key-value pairs. First is the dut, second is the ground ref
+ *  CAL side
+ *
+ */
 KeyValuePair bridgeMapCAL[] = {
     {0, {8, 4}, {4, 14}},   // vcc vcc 2+7, P0-P11 self check
     {1, {5, 1}, {16, 17}},  // calsiga vcalab 11+13, P13-P14
@@ -266,14 +287,11 @@ int main()
         return -1;
     }
 
-    
     DEV_SET_PWM(50);
     /* LCD Init */
     printf("1.14inch LCD demo...\r\n");
     LCD_1IN14_Init(HORIZONTAL);
     LCD_1IN14_Clear(WHITE);
-
-    
 
     // LCD_SetBacklight(1023);
     UDOUBLE Imagesize = (LCD_1IN14_HEIGHT)*LCD_1IN14_WIDTH * 2;
@@ -315,8 +333,6 @@ int main()
     gpio_set_irq_enabled_with_callback(KEY_A, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
     gpio_set_irq_enabled_with_callback(KEY_B, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
-
-    
     // Wait forever
     while (1)
     {
@@ -355,6 +371,8 @@ int main()
                 continue; // don't do anything until self check
 
             // cycle through all channels except first
+            bool allok = true;
+            textpos = STARTTEXTPOS;
 
             for (size_t i = 1; i < intMapSize; ++i)
             {
@@ -375,42 +393,61 @@ int main()
                 if (pin_state == 1)
                 {
                     Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
-                    sprintf(str_float, "Bridge  %d - %d", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
-                    Paint_DrawString_EN(1, 70, str_float, &Font20, 0x000f, 0xfff0);
+                    if (i == 4 || i == 11)
+                    {
+                        sprintf(str_float, "Bridge  %d - %d (power-gnd)", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                    }
+                    else
+                    {
+                        sprintf(str_float, "Bridge  %d - %d", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                    }
+                    Paint_DrawString_EN(1, textpos, str_float, &Font20, 0x000f, 0xfff0);
                     LCD_1IN14_Display(BlackImage);
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+                    //                   pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
 
-                    sleep_ms(3000);
+                    //                    sleep_ms(3000);
+                    textpos += 10;
+                    allok = false;
 
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+                    //                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
 
-                    cleartogo = 0;
-                    break;
+                    //                    cleartogo = 0;
+                    //                    break;
                 }
 
                 if (i == intMapSize - 1)
-                { // if we got here turn allto green
+                {
+                    if (allok)
+                    { // if we got here turn allto green
 
-                    // turn to green
-                    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, GREEN);
-                    Paint_DrawString_EN(1, 70, "All ok", &Font20, 0x000f, 0xfff0);
-                    printf("All ok");
-                    LCD_1IN14_Display(BlackImage);
+                        // turn to green
+                        Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, GREEN);
+                        Paint_DrawString_EN(1, 70, "All ok", &Font20, 0x000f, 0xfff0);
+                        printf("All ok");
+                        LCD_1IN14_Display(BlackImage);
 
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
-                    sleep_ms(100);
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
-                    sleep_ms(100);
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
-                    sleep_ms(100);
-                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+                        sleep_ms(100);
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+                        sleep_ms(100);
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+                        sleep_ms(100);
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
 
-                    cleartogo = 0;
+                        cleartogo = 0;
+                    }
+                    else
+                    {
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
+
+                        sleep_ms(3000);
+
+                        pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
+                    }
                 }
             }
         }
     }
-    
 
     return 0;
 }
