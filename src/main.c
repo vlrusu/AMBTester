@@ -23,6 +23,7 @@
 #include "DEV_Config.h"
 #include "GUI_Paint.h"
 #include "Debug.h"
+#include <string.h>
 
 #include "Infrared.h"
 
@@ -108,30 +109,43 @@ typedef struct
  *  CAL side
  *
  */
+
+#define MAXMAP 20
 KeyValuePair bridgeMapCAL[] = {
     {0, {8, 4}, {4, 14}},   // vcc vcc 2+7, P0-P11 self check
     {1, {5, 1}, {16, 17}},  // calsiga vcalab 11+13, P13-P14
     {2, {4, 2}, {15, 16}},  // calsigb calsiga 9+11, P12-P13
     {3, {3, 3}, {14, 15}},  // vcc calsigb 7+9, P11-P12
     {4, {3, 5}, {14, 13}},  // vcc gndcal 7+5, P11-P10
-    {5, {0, 6}, {11, 12}},  // sigbp gnd 1+3, P8-P9
-    {6, {12, 7}, {10, 11}}, // sigbn sigbp 10+1, P4-P8
-    {7, {12, 6}, {10, 9}},  // sigbn gnd 10+3, P4-P9
-    {8, {13, 6}, {7, 8}},   // sigap gnd 12+3, P5-P9
-    {9, {14, 10}, {6, 7}},  // sigan sigap 14+12, P6-P5
-    {10, {14, 6}, {6, 5}},  // sigan gnd 14+3, P6-P9
-    {11, {8, 6}, {4, 5}},   // vcc gnd 2+3, P0-P9
-    {12, {9, 15}, {3, 4}},  // sck vcc 4+2, P1-P0
-    {13, {10, 14}, {2, 3}}, // sdi sck 6+4, P2-P1
-    {14, {11, 13}, {1, 2}}, // cs sdi 8+6, P3-P2
+    {5, {10, 14}, {2, 3}}, // sdi sck 6+4, P2-P1
+    {6, {0, 6}, {11, 12}},  // sigbp gnd 1+3, P8-P9
+    {7, {12, 7}, {10, 11}}, // sigbn sigbp 10+1, P4-P8
+    {8, {12, 6}, {10, 9}},  // sigbn gnd 10+3, P4-P9
+    {9, {13, 6}, {7, 8}},   // sigap gnd 12+3, P5-P9
+    {10, {14, 10}, {6, 7}},  // sigan sigap 14+12, P6-P5
+    {11, {14, 6}, {6, 5}},  // sigan gnd 14+3, P6-P9
+    {12, {9, 15}, {3, 4}},  // sck vcc 4+2, P1-P0    
+    {13, {11, 13}, {1, 2}}, // cs sdi 8+6, P3-P2
 };
 
+// HV side
 KeyValuePair bridgeMapHV[] = {
-    {0, {10, 12}, {2, 1}}, // csbar+sdi 6+8, P2-P3
-    {1, {10, 14}, {2, 3}}, // sdi sck 6+4, P2-P1
-    {2, {8, 4}, {4, 14}},  // vcc vcc 2+7, P0-P11
-
+{0, {10,4}, {5,14} }, //vcc vcc 6+7, P2-P11
+{1, {5,1}, {16,17} }, //sdi cs 11+13, P13-P14
+{2, {1,5}, {12,13} }, //sigan gnd 3+5, P9-P10
+{3, {3,3}, {14,15} }, //vcc sck 7+9, P11-P12
+{4, {10,5}, {5,6} }, //vcc gnd 6+5, P2-P10
+{5, {4,2}, {15,16} }, //sck sdi 9+11, P12-P13
+{6, {0,6}, {11,12} }, //sigap sigan 1+3, P8-P9
+{7, {2,7}, {10,11} }, //gnd sigap 5+1, P10-P8
+{8, {8,5}, {8,9} }, //sigbn gnd 2+5, P0-P10
+{9, {9,15}, {7,8} }, //sigbp sigbn 4+2, P1-P0
+{10, {2,14}, {6,7} }, //gnd sigbp 5+4, P10-P1
+{11, {11,13}, {4,5} }, //fuse vcc 8+6, P3-P2
 };
+
+
+
 
 // Define the size of the map based on the number of entries
 const size_t intMapSizeCAL = sizeof(bridgeMapCAL) / sizeof(bridgeMapCAL[0]);
@@ -339,6 +353,7 @@ int main()
         // Read VSYS voltage
         float vsys_voltage = read_vsys_voltage();
         char str_float[20]; // Enough space for a float and null-terminator
+        char bridgestring[MAXMAP][20];
         sprintf(str_float, "%d%%", (int)(100 * vsys_voltage / full_battery));
         printf("VSYS Voltage: %.2f \n", vsys_voltage);
         Paint_DrawString_EN(1, 1, str_float, &Font20, 0x000f, 0xfff0);
@@ -352,7 +367,7 @@ int main()
         // wait for selfcheck to go low
         adg706_set_address(&dut, bridgeMap[0].mbpair.first);
         adg706_set_address(&gndref, bridgeMap[0].mbpair.second);
-        sleep_ms(150);
+        sleep_ms(200);
 
         bool pin_state = gpio_get(INPUT_PIN);
 
@@ -372,7 +387,7 @@ int main()
 
             // cycle through all channels except first
             bool allok = true;
-            textpos = STARTTEXTPOS;
+            int textpos = STARTTEXTPOS;
 
             for (size_t i = 1; i < intMapSize; ++i)
             {
@@ -390,23 +405,23 @@ int main()
                 printf("Pin state is: %s ", pin_state ? "High" : "Low");
                 printf(" between pins %d and %d \n", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
 
+                sprintf(bridgestring[i], "NULL");
+
                 if (pin_state == 1)
                 {
-                    Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
-                    if (i == 4 || i == 11)
+
+                    if (i == 4)
                     {
-                        sprintf(str_float, "Bridge  %d - %d (power-gnd)", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                        sprintf(bridgestring[i], "Bridge %d-%d(p-g)", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                    }
+                    else if (i==5){
+                        sprintf(bridgestring[i], "Bridge %d-%d(bus)", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
                     }
                     else
                     {
-                        sprintf(str_float, "Bridge  %d - %d", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
+                        sprintf(bridgestring[i], "Bridge %d-%d", bridgeMap[i].dbpair.first, bridgeMap[i].dbpair.second);
                     }
-                    Paint_DrawString_EN(1, textpos, str_float, &Font20, 0x000f, 0xfff0);
-                    LCD_1IN14_Display(BlackImage);
-                    //                   pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
 
-                    //                    sleep_ms(3000);
-                    textpos += 10;
                     allok = false;
 
                     //                    pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
@@ -433,17 +448,31 @@ int main()
                         pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
                         sleep_ms(100);
                         pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
-
-                        cleartogo = 0;
                     }
                     else
                     {
+                        Paint_ClearWindows(1, TOPCOLORWINDOW, LCD_1IN14.WIDTH, LCD_1IN14.HEIGHT, RED);
+                        for (int i = 1; i < intMapSize; i++)
+                        {
+                            if (strcmp(bridgestring[i], "NULL") != 0)
+                            {
+
+                                {
+
+                                    Paint_DrawString_EN(1, textpos, bridgestring[i], &Font20, 0x000f, 0xfff0);
+
+                                    textpos += 20;
+                                }
+                            }
+                        }
+                        LCD_1IN14_Display(BlackImage);
                         pwm_set_chan_level(slice_num, PWM_CHAN_A, 5000);
 
                         sleep_ms(3000);
 
                         pwm_set_chan_level(slice_num, PWM_CHAN_A, 0);
                     }
+                    cleartogo = 0;
                 }
             }
         }
